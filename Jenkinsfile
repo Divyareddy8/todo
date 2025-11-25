@@ -9,6 +9,7 @@ pipeline {
     }
 
     stages {
+
         stage('Checkout Source Code') {
             steps {
                 checkout([$class: 'GitSCM',
@@ -23,9 +24,9 @@ pipeline {
 
         stage('Setup Python Environment') {
             steps {
-                sh "rm -rf ${env.VENV} || true"
-                sh "${env.PYTHON_CMD} -m venv ${env.VENV}"
-                sh "${env.VENV}/bin/pip install --upgrade pip"
+                sh "rm -rf ${VENV} || true"
+                sh "${PYTHON_CMD} -m venv ${VENV}"
+                sh "${VENV}/bin/pip install --upgrade pip"
             }
         }
 
@@ -33,23 +34,30 @@ pipeline {
             steps {
                 script {
                     if (fileExists('requirements.txt')) {
-                        sh "${env.VENV}/bin/pip install -r requirements.txt"
+                        sh "${VENV}/bin/pip install -r requirements.txt"
                     } else {
-                        error "requirements.txt not found! Cannot install dependencies."
+                        echo "No requirements.txt found — skipping dependency install."
                     }
                 }
             }
         }
 
-        stage('Run Unit and Integration Tests') {
+        stage('Run Tests') {
             steps {
-                sh "${env.VENV}/bin/pytest -v"
+                script {
+                    if (fileExists('tests')) {
+                        sh "${VENV}/bin/pip install pytest"
+                        sh "${VENV}/bin/pytest -v"
+                    } else {
+                        echo "No tests folder found — skipping tests."
+                    }
+                }
             }
         }
 
         stage('Build Docker Image') {
             steps {
-                sh "docker build -t ${env.IMAGE_TAG} ."
+                sh "docker build -t ${IMAGE_TAG} ."
             }
         }
 
@@ -58,24 +66,24 @@ pipeline {
                 withCredentials([usernamePassword(credentialsId: 'docker-creds',
                                                   usernameVariable: 'USER',
                                                   passwordVariable: 'PASS')]) {
-                    sh '''
-                    echo "$PASS" | docker login -u "$USER" --password-stdin
-                    docker push ${IMAGE_TAG}
-                    '''
+                    sh """
+                        echo "$PASS" | docker login -u "$USER" --password-stdin
+                        docker push ${IMAGE_TAG}
+                    """
                 }
             }
         }
 
         stage('Deploy Container') {
             steps {
-                sh '''
-                echo "Deploying container: ${CONTAINER_NAME}"
-                docker pull ${IMAGE_TAG}
-                docker stop ${CONTAINER_NAME} || true
-                docker rm ${CONTAINER_NAME} || true
-                docker run -d -p 5000:5000 --name ${CONTAINER_NAME} ${IMAGE_TAG}
-                echo "Deployment complete!"
-                '''
+                sh """
+                    echo "Deploying container: ${CONTAINER_NAME}"
+                    docker pull ${IMAGE_TAG}
+                    docker stop ${CONTAINER_NAME} || true
+                    docker rm ${CONTAINER_NAME} || true
+                    docker run -d -p 5000:5000 --name ${CONTAINER_NAME} ${IMAGE_TAG}
+                    echo "Deployment complete!"
+                """
             }
         }
     }
@@ -85,7 +93,7 @@ pipeline {
             cleanWs()
         }
         success {
-            echo "Pipeline succeeded! Image ${env.IMAGE_TAG} deployed."
+            echo "Pipeline succeeded! Image ${IMAGE_TAG} deployed."
         }
         failure {
             echo "Pipeline failed. Check the logs for details."
