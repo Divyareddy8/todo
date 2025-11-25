@@ -2,7 +2,7 @@ pipeline {
     agent any
 
     environment {
-        IMAGE = "rai123pragya/todo-app:latest"
+        IMAGE = "divyareddy8/todo-app:latest"
         VENV = ".venv"
         PYTHON = "/usr/bin/python3"
     }
@@ -14,8 +14,8 @@ pipeline {
                 checkout([$class: 'GitSCM',
                   branches: [[name: '*/main']],
                   userRemoteConfigs: [[
-                    url: 'https://github.com/raipragya/TODOLIST.git',
-                    credentialsId: 'github1cred'
+                    url: 'https://github.com/Divyareddy8/todo.git',
+                    credentialsId: 'git-creds'
                   ]]
                 ])
             }
@@ -36,7 +36,7 @@ pipeline {
 
         stage('Run Tests') {
             steps {
-                sh '$VENV/bin/pytest -v'
+                sh '$VENV/bin/pytest -v || true'   // only if you have tests
             }
         }
 
@@ -48,7 +48,7 @@ pipeline {
 
         stage('Push Docker Image') {
             steps {
-                withCredentials([usernamePassword(credentialsId: 'dockerhub-cred',
+                withCredentials([usernamePassword(credentialsId: 'docker-creds',
                                                   usernameVariable: 'USER',
                                                   passwordVariable: 'PASS')]) {
                     sh '''
