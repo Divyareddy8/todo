@@ -5,7 +5,8 @@ pipeline {
         // Docker Image Tag
         IMAGE_TAG = "divyareddy8/todo-app:latest"
         VENV = ".venv"
-        // Use 'python' or 'python3' and rely on PATH.
+        // Use the full path for Python if 'python' isn't in PATH (e.g., C:\\Python313\\python.exe)
+        // Sticking with 'python' for now, but be prepared to change this if it fails again.
         PYTHON_CMD = "python" 
         CONTAINER_NAME = "todo-app"
     }
@@ -13,7 +14,6 @@ pipeline {
     stages {
         stage('Checkout Source Code') {
             steps {
-                // Git checkout remains the same
                 checkout([$class: 'GitSCM',
                     branches: [[name: '*/main']],
                     userRemoteConfigs: [[
@@ -26,8 +26,9 @@ pipeline {
 
         stage('Setup Python Environment') {
             steps {
-                // 1. Use 'rmdir /s /q' for Windows folder removal
-                bat "rmdir /s /q ${env.VENV}"
+                // FIX: Use '|| exit 0' to prevent build failure if the directory (.venv) doesn't exist yet.
+                // This makes cleanup non-critical for the build.
+                bat "rmdir /s /q ${env.VENV} || exit 0"
                 
                 // 2. Create venv using Python command
                 bat "${env.PYTHON_CMD} -m venv ${env.VENV}"
@@ -53,12 +54,12 @@ pipeline {
         stage('Run Unit and Integration Tests') {
             steps {
                 // Use 'Scripts\pytest' on Windows
-                bat "${env.VENV}\\Scripts\\pytest -v"
+                // This step will likely fail if requirements.txt does not contain pytest
+                bat "${env.VENV}\\Scripts\\pytest -v" 
             }
         }
 
         stage('Build Docker Image') {
-            // Docker commands work on both if Docker is in the PATH
             steps {
                 bat "docker build -t ${env.IMAGE_TAG} ."
             }
@@ -66,21 +67,24 @@ pipeline {
 
         stage('Push Docker Image') {
             steps {
-                // Use 'bat' for the login/push commands
+                // Use withCredentials only to expose the variables
                 withCredentials([usernamePassword(credentialsId: 'docker-creds',
-                                                   usernameVariable: 'USER',
-                                                   passwordVariable: 'PASS')]) {
-                    bat '''
+                                                     usernameVariable: 'USER',
+                                                     passwordVariable: 'PASS')]) {
+                    // FIX: Pass the environment variables as command arguments to the bat block.
+                    // This is safer than relying on bat's environment variable propagation, 
+                    // especially for variables exposed by 'withCredentials'.
+                    bat """
                     echo %PASS% | docker login -u %USER% --password-stdin
-                    docker push %IMAGE_TAG%
-                    '''
+                    docker push ${env.IMAGE_TAG}
+                    """
                 }
             }
         }
 
         stage('Deploy Container') {
-            // Use 'bat' for the deployment script
             steps {
+                // Docker stop/rm commands include '|| exit 0' to prevent failure if container doesn't exist
                 bat '''
                 echo Attempting to deploy and restart container: %CONTAINER_NAME%
                 docker pull %IMAGE_TAG%
